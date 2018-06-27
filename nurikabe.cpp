@@ -168,11 +168,11 @@ private:
     shared_ptr<Region>& region(int x, int y);
     const shared_ptr<Region>& region(int x, int y) const;
 
-    void print(const string& s, const set<pair<int, int>>& updated = set<pair<int, int>>(),
-        int failed_guesses = 0, const set<pair<int, int>>& failed_coords = set<pair<int, int>>());
+    void print(const string& s, const set<pair<int, int>>& updated = {},
+        int failed_guesses = 0, const set<pair<int, int>>& failed_coords = {});
     bool process(bool verbose, const set<pair<int, int>>& mark_as_black,
         const set<pair<int, int>>& mark_as_white, const string& s,
-        int failed_guesses = 0, const set<pair<int, int>>& failed_coords = set<pair<int, int>>());
+        int failed_guesses = 0, const set<pair<int, int>>& failed_coords = {});
 
     template <typename F> void for_valid_neighbors(int x, int y, F f) const;
     void insert_valid_neighbors(set<pair<int, int>>& s, int x, int y) const;
@@ -185,10 +185,10 @@ private:
     bool impossibly_big_white_region(int n) const;
 
     bool unreachable(int x_root, int y_root,
-        set<pair<int, int>> discovered = set<pair<int, int>>()) const;
+        set<pair<int, int>> discovered = {}) const;
 
     bool confined(const shared_ptr<Region>& r, cache_map_t& cache,
-        const set<pair<int, int>>& verboten = set<pair<int, int>>()) const;
+        const set<pair<int, int>>& verboten = {}) const;
 
     bool detect_contradictions(bool verbose, cache_map_t& cache);
 
