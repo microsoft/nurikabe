@@ -105,7 +105,7 @@ private:
         }
 
         int size() const {
-            return m_coords.size();
+            return static_cast<int>(m_coords.size());
         }
 
         bool contains(const int x, const int y) const {
@@ -126,7 +126,7 @@ private:
         }
 
         int unk_size() const {
-            return m_unknowns.size();
+            return static_cast<int>(m_unknowns.size());
         }
 
         template <typename InIt> void unk_insert(InIt first, InIt last) {
@@ -1422,23 +1422,23 @@ bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
     }
 
 
-    vector<vector<Flag>> flags(m_width, vector<Flag>(m_height, NONE));
+    vector<Flag> flags(m_width * m_height, NONE);
 
     // The open set contains cells that we're considering adding to the region.
     for (auto i = r->unk_begin(); i != r->unk_end(); ++i) {
-        flags[i->first][i->second] = OPEN;
+        flags[i->first + i->second * m_width] = OPEN;
     }
 
     // The closed set contains cells that we've hypothetically added to the region.
     for (auto i = r->begin(); i != r->end(); ++i) {
-        flags[i->first][i->second] = CLOSED;
+        flags[i->first + i->second * m_width] = CLOSED;
     }
 
     int closed_size = r->size();
 
     // Flag the verboten cells last, because this could overwrite open flags.
     for (auto i = verboten.begin(); i != verboten.end(); ++i) {
-        flags[i->first][i->second] = VERBOTEN;
+        flags[i->first + i->second * m_width] = VERBOTEN;
     }
 
     // While we need to consume more cells...
@@ -1447,28 +1447,18 @@ bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
         || r->numbered() && closed_size < r->number()) {
 
         // Do we have a cell to consider?
-        const int BOGUS_COORD = -1;
-        pair<int, int> p(BOGUS_COORD, BOGUS_COORD);
 
-        for (int x = 0; x < m_width; ++x) {
-            for (int y = 0; y < m_height; ++y) {
-                Flag& f = flags[x][y];
+        const auto iter = find(flags.begin(), flags.end(), OPEN);
 
-                if (f == OPEN) {
-                    f = NONE;
-                    p = make_pair(x, y);
-                    break;
-                }
-            }
-
-            if (p.first != BOGUS_COORD) {
-                break;
-            }
-        }
-
-        if (p.first == BOGUS_COORD) {
+        if (iter == flags.end()) {
             break; // We don't.
         }
+
+        *iter = NONE;
+
+        const int index = static_cast<int>(iter - flags.begin());
+
+        const pair<int, int> p(index % m_width, index / m_width);
 
         // Consider cell p.
 
@@ -1499,8 +1489,8 @@ bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
                 // that's adjacent to another numbered region.
                 bool rejected = false;
 
-                for_valid_neighbors(p.first, p.second, [&](const int x, const int y) {
-                    const auto& other = region(x, y);
+                for_valid_neighbors(p.first, p.second, [&](const int a, const int b) {
+                    const auto& other = region(a, b);
 
                     if (other && other->numbered() && other != r) {
                         rejected = true;
@@ -1523,11 +1513,11 @@ bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
         }
 
         if (!area) { // Consume an unknown cell.
-            flags[p.first][p.second] = CLOSED;
+            flags[p.first + p.second * m_width] = CLOSED;
             ++closed_size;
 
             for_valid_neighbors(p.first, p.second, [&](const int a, const int b) {
-                Flag& f = flags[a][b];
+                Flag& f = flags[a + b * m_width];
 
                 if (f == NONE) {
                     f = OPEN;
@@ -1539,13 +1529,13 @@ bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
             }
         } else { // Consume a whole region.
             for (auto i = area->begin(); i != area->end(); ++i) {
-                flags[i->first][i->second] = CLOSED;
+                flags[i->first + i->second * m_width] = CLOSED;
             }
 
             closed_size += area->size();
 
             for (auto i = area->unk_begin(); i != area->unk_end(); ++i) {
-                Flag& f = flags[i->first][i->second];
+                Flag& f = flags[i->first + i->second * m_width];
 
                 if (f == NONE) {
                     f = OPEN;
