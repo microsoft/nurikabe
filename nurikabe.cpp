@@ -150,6 +150,7 @@ private:
     bool analyze_potential_pools(bool verbose);
     bool analyze_isolated_unknown_regions(bool verbose);
     bool analyze_confinement(bool verbose, map<shared_ptr<Region>, set<pair<int, int>>>& cache);
+    vector<pair<int, int>> guessing_order();
     bool analyze_hypotheticals(bool verbose);
 
     // We use an upper-left origin.
@@ -164,9 +165,11 @@ private:
     shared_ptr<Region>& region(int x, int y);
     const shared_ptr<Region>& region(int x, int y) const;
 
-    void print(const string& s, const set<pair<int, int>>& updated = set<pair<int, int>>());
+    void print(const string& s, const set<pair<int, int>>& updated = set<pair<int, int>>(),
+        int failed_guesses = 0, const set<pair<int, int>>& failed_coords = set<pair<int, int>>());
     bool process(bool verbose, const set<pair<int, int>>& mark_as_black,
-        const set<pair<int, int>>& mark_as_white, const string& s);
+        const set<pair<int, int>>& mark_as_white, const string& s,
+        int failed_guesses = 0, const set<pair<int, int>>& failed_coords = set<pair<int, int>>());
 
     template <typename F> void for_valid_neighbors(int x, int y, F f) const;
     void insert_valid_neighbors(set<pair<int, int>>& s, int x, int y) const;
@@ -206,7 +209,8 @@ private:
     SitRep m_sitrep;
 
     // This stores the output that is generated during solving, to be converted into HTML later.
-    vector<tuple<string, vector<vector<State>>, set<pair<int, int>>, long long>> m_output;
+    vector<tuple<string, vector<vector<State>>, set<pair<int, int>>, long long,
+        int, set<pair<int, int>>>> m_output;
 
     // This is used to guess cells in a deterministic but pseudorandomized order.
     mt19937 m_prng;
@@ -903,23 +907,36 @@ bool Grid::analyze_confinement(const bool verbose,
     return process(verbose, mark_as_black, mark_as_white, "Confinement analysis succeeded.");
 }
 
-bool Grid::analyze_hypotheticals(const bool verbose) {
-    set<pair<int, int>> mark_as_black;
-    set<pair<int, int>> mark_as_white;
+// Guess cells in a deterministic but pseudorandomized order.
+// This attempts to avoid repeatedly guessing cells that won't get us anywhere.
+// Prioritize guesses near white cells, which appears to be an especially good heuristic.
+// (In particular, it appears to be better than prioritizing guesses near white regions.)
+// Manhattan distance appears to work well; see https://en.wikipedia.org/wiki/Taxicab_geometry
+vector<pair<int, int>> Grid::guessing_order() {
+    // Find all unknown cells and all white cells.
+    // The greatest possible Manhattan distance on the grid is m_width - 1 + m_height - 1,
+    // so we use m_width + m_height as an extremely large placeholder.
 
-    vector<pair<int, int>> v;
+    vector<tuple<int, int, int>> x_y_manhattan;
+    vector<pair<int, int>> white_cells;
 
     for (int x = 0; x < m_width; ++x) {
         for (int y = 0; y < m_height; ++y) {
-            if (cell(x, y) == UNKNOWN) {
-                v.push_back(make_pair(x, y));
+            switch (cell(x, y)) {
+                case UNKNOWN:
+                    x_y_manhattan.push_back(make_tuple(x, y, m_width + m_height));
+                    break;
+                case WHITE:
+                    white_cells.push_back(make_pair(x, y));
+                    break;
+                default:
+                    break;
             }
         }
     }
 
 
-    // Guess cells in a deterministic but pseudorandomized order.
-    // This attempts to avoid repeatedly guessing cells that won't get us anywhere.
+    // Randomly shuffle the unknown cells.
 
     auto dist = [this](const ptrdiff_t n) {
         // random_shuffle() provides n > 0. It wants [0, n).
@@ -927,8 +944,55 @@ bool Grid::analyze_hypotheticals(const bool verbose) {
         return uniform_int_distribution<ptrdiff_t>(0, n - 1)(m_prng);
     };
 
-    random_shuffle(v.begin(), v.end(), dist);
+    random_shuffle(x_y_manhattan.begin(), x_y_manhattan.end(), dist);
 
+
+    // Determine the Manhattan distance from each unknown cell to the nearest white cell.
+    // There's probably a cleverer algorithm for this.
+
+    for (auto i = x_y_manhattan.begin(); i != x_y_manhattan.end(); ++i) {
+        const int x1 = get<0>(*i);
+        const int y1 = get<1>(*i);
+        int& manhattan = get<2>(*i);
+
+        for (auto k = white_cells.begin(); k != white_cells.end(); ++k) {
+            const int x2 = k->first;
+            const int y2 = k->second;
+
+            const int d = abs(x1 - x2) + abs(y1 - y2);
+
+            if (d < manhattan) {
+                manhattan = d;
+            }
+        }
+    }
+
+
+    // Prioritize the unknown cells by the Manhattan distance to the nearest white cell.
+    // stable_sort() avoids disrupting the random_shuffle() above.
+
+    stable_sort(x_y_manhattan.begin(), x_y_manhattan.end(),
+        [](const tuple<int, int, int>& l, const tuple<int, int, int>& r) {
+            return get<2>(l) < get<2>(r);
+        });
+
+
+    vector<pair<int, int>> ret;
+
+    transform(x_y_manhattan.begin(), x_y_manhattan.end(), back_inserter(ret),
+        [](const tuple<int, int, int>& t) { return make_pair(get<0>(t), get<1>(t)); });
+
+    return ret;
+}
+
+bool Grid::analyze_hypotheticals(const bool verbose) {
+    set<pair<int, int>> mark_as_black;
+    set<pair<int, int>> mark_as_white;
+
+    const vector<pair<int, int>> v = guessing_order();
+
+    int failed_guesses = 0;
+    set<pair<int, int>> failed_coords;
 
     for (auto u = v.begin(); u != v.end(); ++u) {
         const int x = u->first;
@@ -952,16 +1016,18 @@ bool Grid::analyze_hypotheticals(const bool verbose) {
             if (sr == CONTRADICTION_FOUND) {
                 mark_as_diff.insert(make_pair(x, y));
                 return process(verbose, mark_as_black, mark_as_white,
-                    "Hypothetical contradiction found.");
+                    "Hypothetical contradiction found.", failed_guesses, failed_coords);
             }
 
             if (sr == SOLUTION_FOUND) {
                 mark_as_same.insert(make_pair(x, y));
                 return process(verbose, mark_as_black, mark_as_white,
-                    "Hypothetical solution found.");
+                    "Hypothetical solution found.", failed_guesses, failed_coords);
             }
 
             // sr == CANNOT_PROCEED
+            ++failed_guesses;
+            failed_coords.insert(make_pair(x, y));
         }
     }
 
@@ -1009,6 +1075,7 @@ void Grid::write(ostream& os, const long long start, const long long finish) con
         "      td.black.new { background-color: #008080; }\n"
         "      td.black.old { background-color: #808080; }\n"
         "      td.number    { }\n"
+        "      td.failed    { border: solid 3px #000000; }\n"
         "    </style>\n"
         "    <title>Nurikabe</title>\n"
         "  </head>\n"
@@ -1021,8 +1088,16 @@ void Grid::write(ostream& os, const long long start, const long long finish) con
         const auto& v = get<1>(*i);
         const auto& updated = get<2>(*i);
         const long long ctr = get<3>(*i);
+        const int failed_guesses = get<4>(*i);
+        const auto& failed_coords = get<5>(*i);
 
         os << s << " (" << format_time(old_ctr, ctr) << ")\n";
+
+        if (failed_guesses == 1) {
+            os << "<br/>1 guess failed.\n";
+        } else if (failed_guesses > 0) {
+            os << "<br/>" << failed_guesses << " guesses failed.\n";
+        }
 
         old_ctr = ctr;
 
@@ -1034,6 +1109,10 @@ void Grid::write(ostream& os, const long long start, const long long finish) con
             for (int x = 0; x < m_width; ++x) {
                 os << "<td class=\"";
                 os << (updated.find(make_pair(x, y)) != updated.end() ? "new " : "old ");
+
+                if (failed_coords.find(make_pair(x, y)) != failed_coords.end()) {
+                    os << "failed ";
+                }
 
                 switch (v[x][y]) {
                     case UNKNOWN: os << "unknown\"> ";           break;
@@ -1078,7 +1157,8 @@ const shared_ptr<Grid::Region>& Grid::region(const int x, const int y) const {
     return m_cells[x][y].second;
 }
 
-void Grid::print(const string& s, const set<pair<int, int>>& updated) {
+void Grid::print(const string& s, const set<pair<int, int>>& updated,
+    const int failed_guesses, const set<pair<int, int>>& failed_coords) {
     vector<vector<State>> v(m_width, vector<State>(m_height));
 
     for (int x = 0; x < m_width; ++x) {
@@ -1087,11 +1167,12 @@ void Grid::print(const string& s, const set<pair<int, int>>& updated) {
         }
     }
 
-    m_output.push_back(make_tuple(s, v, updated, counter()));
+    m_output.push_back(make_tuple(s, v, updated, counter(), failed_guesses, failed_coords));
 }
 
 bool Grid::process(const bool verbose, const set<pair<int, int>>& mark_as_black,
-    const set<pair<int, int>>& mark_as_white, const string& s) {
+    const set<pair<int, int>>& mark_as_white, const string& s,
+    const int failed_guesses, const set<pair<int, int>>& failed_coords) {
 
     if (mark_as_black.empty() && mark_as_white.empty()) {
         return false;
@@ -1116,7 +1197,7 @@ bool Grid::process(const bool verbose, const set<pair<int, int>>& mark_as_black,
                 " or mark an already known cell.)";
         }
 
-        print(t, updated);
+        print(t, updated, failed_guesses, failed_coords);
     }
 
     return true;
