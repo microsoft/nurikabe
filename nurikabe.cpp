@@ -592,7 +592,7 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
         || analyze_potential_pools(verbose)
         || detect_contradictions(verbose, cache)
         || analyze_confinement(verbose, cache)
-        || guessing && analyze_hypotheticals(verbose)) {
+        || (guessing && analyze_hypotheticals(verbose))) {
 
         return m_sitrep;
     }
@@ -630,9 +630,9 @@ bool Grid::analyze_single_liberties(const bool verbose) {
         const Region& r = **i;
 
         const bool partial =
-            r.black() && r.size() < m_total_black
+            (r.black() && r.size() < m_total_black)
                 || r.white()
-                || r.numbered() && r.size() < r.number();
+                || (r.numbered() && r.size() < r.number());
 
         if (partial && r.unk_size() == 1) {
             if (r.black()) {
@@ -1427,9 +1427,9 @@ bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
     }
 
     // While we need to consume more cells...
-    while (r->black() && closed_size < m_total_black
+    while ((r->black() && closed_size < m_total_black)
         || r->white()
-        || r->numbered() && closed_size < r->number()) {
+        || (r->numbered() && closed_size < r->number())) {
 
         // Do we have a cell to consider?
 
@@ -1530,9 +1530,9 @@ bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
     }
 
     // We're confined if we still need to consume more cells.
-    return r->black() && closed_size < m_total_black
+    return (r->black() && closed_size < m_total_black)
         || r->white()
-        || r->numbered() && closed_size < r->number();
+        || (r->numbered() && closed_size < r->number());
 }
 
 bool Grid::detect_contradictions(const bool verbose, cache_map_t& cache) {
@@ -1567,8 +1567,8 @@ bool Grid::detect_contradictions(const bool verbose, cache_map_t& cache) {
         // We don't need to look for gigantic black regions because
         // counting black cells is strictly more powerful.
 
-        if (r.white() && impossibly_big_white_region(r.size())
-            || r.numbered() && r.size() > r.number()) {
+        if ((r.white() && impossibly_big_white_region(r.size()))
+            || (r.numbered() && r.size() > r.number())) {
 
             return uh_oh("Contradiction found! Gigantic region detected.");
         }
