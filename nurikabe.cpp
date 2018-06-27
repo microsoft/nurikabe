@@ -143,6 +143,15 @@ private:
         set<pair<int, int>> m_unknowns;
     };
 
+    bool analyze_complete_islands(bool verbose);
+    bool analyze_single_liberties(bool verbose);
+    bool analyze_dual_liberties(bool verbose);
+    bool analyze_unreachable_cells(bool verbose);
+    bool analyze_potential_pools(bool verbose);
+    bool analyze_isolated_unknown_regions(bool verbose);
+    bool analyze_confinement(bool verbose, map<shared_ptr<Region>, set<pair<int, int>>>& cache);
+    bool analyze_hypotheticals(bool verbose);
+
     // We use an upper-left origin.
     // This is convenient during construction and printing.
     // It's irrelevant during analysis.
@@ -582,11 +591,33 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
     }
 
 
+    // Run increasingly expensive steps of analysis.
+    // Return as soon as one succeeds.
+
+    if (analyze_complete_islands(verbose)
+        || analyze_single_liberties(verbose)
+        || analyze_dual_liberties(verbose)
+        || analyze_unreachable_cells(verbose)
+        || analyze_potential_pools(verbose)
+        || analyze_isolated_unknown_regions(verbose)
+        || analyze_confinement(verbose, cache)
+        || guessing && analyze_hypotheticals(verbose)) {
+
+        return m_sitrep;
+    }
+
+
+    if (verbose) {
+        print("I'm stumped!");
+    }
+
+    return CANNOT_PROCEED;
+}
+
+// Look for complete islands.
+bool Grid::analyze_complete_islands(const bool verbose) {
     set<pair<int, int>> mark_as_black;
     set<pair<int, int>> mark_as_white;
-
-
-    // Look for complete islands.
 
     for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
         const Region& r = **i;
@@ -596,12 +627,13 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
         }
     }
 
-    if (process(verbose, mark_as_black, mark_as_white, "Complete islands found.")) {
-        return m_sitrep;
-    }
+    return process(verbose, mark_as_black, mark_as_white, "Complete islands found.");
+}
 
-
-    // Look for partial regions that can expand into only one cell. They must expand.
+// Look for partial regions that can expand into only one cell. They must expand.
+bool Grid::analyze_single_liberties(const bool verbose) {
+    set<pair<int, int>> mark_as_black;
+    set<pair<int, int>> mark_as_white;
 
     for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
         const Region& r = **i;
@@ -620,13 +652,14 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
         }
     }
 
-    if (process(verbose, mark_as_black, mark_as_white,
-        "Expanded partial regions with only one liberty.")) {
-        return m_sitrep;
-    }
+    return process(verbose, mark_as_black, mark_as_white,
+        "Expanded partial regions with only one liberty.");
+}
 
-
-    // Look for N - 1 islands with exactly two diagonal liberties.
+// Look for N - 1 islands with exactly two diagonal liberties.
+bool Grid::analyze_dual_liberties(const bool verbose) {
+    set<pair<int, int>> mark_as_black;
+    set<pair<int, int>> mark_as_white;
 
     for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
         const Region& r = **i;
@@ -659,16 +692,17 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
         }
     }
 
-    if (process(verbose, mark_as_black, mark_as_white,
-        "N - 1 islands with exactly two diagonal liberties found.")) {
-        return m_sitrep;
-    }
+    return process(verbose, mark_as_black, mark_as_white,
+        "N - 1 islands with exactly two diagonal liberties found.");
+}
 
-
-    // Look for unreachable cells. They must be black.
-    // This supersedes complete island analysis and forbidden bridge analysis.
-    // (We run complete island analysis above because it's fast
-    // and it makes the output easier to understand.)
+// Look for unreachable cells. They must be black.
+// This supersedes complete island analysis and forbidden bridge analysis.
+// (We run complete island analysis above because it's fast
+// and it makes the output easier to understand.)
+bool Grid::analyze_unreachable_cells(const bool verbose) {
+    set<pair<int, int>> mark_as_black;
+    set<pair<int, int>> mark_as_white;
 
     for (int x = 0; x < m_width; ++x) {
         for (int y = 0; y < m_height; ++y) {
@@ -678,12 +712,13 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
         }
     }
 
-    if (process(verbose, mark_as_black, mark_as_white, "Unreachable cells blackened.")) {
-        return m_sitrep;
-    }
+    return process(verbose, mark_as_black, mark_as_white, "Unreachable cells blackened.");
+}
 
-
-    // Look for squares of one unknown and three black cells, or two unknown and two black cells.
+// Look for squares of one unknown and three black cells, or two unknown and two black cells.
+bool Grid::analyze_potential_pools(const bool verbose) {
+    set<pair<int, int>> mark_as_black;
+    set<pair<int, int>> mark_as_white;
 
     for (int x = 0; x < m_width - 1; ++x) {
         for (int y = 0; y < m_height - 1; ++y) {
@@ -733,95 +768,97 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
         }
     }
 
-    if (process(verbose, mark_as_black, mark_as_white, "Whitened cells to prevent pools.")) {
-        return m_sitrep;
-    }
+    return process(verbose, mark_as_black, mark_as_white, "Whitened cells to prevent pools.");
+}
 
+// Look for isolated unknown regions.
+bool Grid::analyze_isolated_unknown_regions(const bool verbose) {
+    set<pair<int, int>> mark_as_black;
+    set<pair<int, int>> mark_as_white;
 
-    // Look for isolated unknown regions.
+    const bool any_black_regions = any_of(m_regions.begin(), m_regions.end(),
+        [](const shared_ptr<Region>& r) { return r->black(); });
 
-    {
-        const bool any_black_regions = any_of(m_regions.begin(), m_regions.end(),
-            [](const shared_ptr<Region>& r) { return r->black(); });
+    set<pair<int, int>> analyzed;
 
-        set<pair<int, int>> analyzed;
+    for (int x = 0; x < m_width; ++x) {
+        for (int y = 0; y < m_height; ++y) {
+            if (cell(x, y) == UNKNOWN && analyzed.find(make_pair(x, y)) == analyzed.end()) {
+                bool encountered_black = false;
 
-        for (int x = 0; x < m_width; ++x) {
-            for (int y = 0; y < m_height; ++y) {
-                if (cell(x, y) == UNKNOWN && analyzed.find(make_pair(x, y)) == analyzed.end()) {
-                    bool encountered_black = false;
+                set<pair<int, int>> open;
+                set<pair<int, int>> closed;
 
-                    set<pair<int, int>> open;
-                    set<pair<int, int>> closed;
+                open.insert(make_pair(x, y));
 
-                    open.insert(make_pair(x, y));
+                while (!open.empty()) {
+                    const pair<int, int> p = *open.begin();
+                    open.erase(open.begin());
 
-                    while (!open.empty()) {
-                        const pair<int, int> p = *open.begin();
-                        open.erase(open.begin());
+                    switch (cell(p.first, p.second)) {
+                        case UNKNOWN:
+                            if (closed.insert(p).second) {
+                                insert_valid_neighbors(open, p.first, p.second);
+                            }
 
-                        switch (cell(p.first, p.second)) {
-                            case UNKNOWN:
-                                if (closed.insert(p).second) {
-                                    insert_valid_neighbors(open, p.first, p.second);
-                                }
+                            break;
 
-                                break;
+                        case BLACK:
+                            encountered_black = true;
+                            break;
 
-                            case BLACK:
-                                encountered_black = true;
-                                break;
-
-                            default:
-                                break;
-                        }
+                        default:
+                            break;
                     }
-
-                    if (!encountered_black && (
-                        any_black_regions || static_cast<int>(closed.size()) < m_total_black)) {
-
-                        mark_as_white.insert(closed.begin(), closed.end());
-                    }
-
-                    analyzed.insert(closed.begin(), closed.end());
                 }
+
+                if (!encountered_black && (
+                    any_black_regions || static_cast<int>(closed.size()) < m_total_black)) {
+
+                    mark_as_white.insert(closed.begin(), closed.end());
+                }
+
+                analyzed.insert(closed.begin(), closed.end());
             }
         }
     }
 
-    if (process(verbose, mark_as_black, mark_as_white, "Isolated unknown regions found.")) {
-        return m_sitrep;
-    }
+    return process(verbose, mark_as_black, mark_as_white, "Isolated unknown regions found.");
+}
 
+// A region would be "confined" if it could not be completed.
+// Black regions need to consume m_total_black cells.
+// White regions need to escape to a number.
+// Numbered regions need to consume N cells.
 
-    // A region would be "confined" if it could not be completed.
-    // Black regions need to consume m_total_black cells.
-    // White regions need to escape to a number.
-    // Numbered regions need to consume N cells.
+// Confinement analysis consists of imagining what would happen if a particular unknown cell
+// were black or white. If that would cause any region to be confined, the unknown cell
+// must be the opposite color.
 
-    // Confinement analysis consists of imagining what would happen if a particular unknown cell
-    // were black or white. If that would cause any region to be confined, the unknown cell
-    // must be the opposite color.
+// Black cells can't confine black regions, obviously.
+// Black cells can confine white regions, by isolating them.
+// Black cells can confine numbered regions, by confining them to an insufficiently large space.
 
-    // Black cells can't confine black regions, obviously.
-    // Black cells can confine white regions, by isolating them.
-    // Black cells can confine numbered regions, by confining them to an insufficiently large space.
+// White cells can confine black regions, by confining them to an insufficiently large space.
+//   (Humans look for isolation here, i.e. permanently separated black regions.
+//   That's harder for us to detect, but counting cells is similarly powerful.)
+// White cells can't confine white regions.
+//   (This is true for freestanding white cells, white cells added to other white regions,
+//   and white cells added to numbered regions.)
+// White cells can confine numbered regions, when added to other numbered regions.
+//   This is the most complicated case to analyze. For example:
+//   ####3
+//   #6 xXx
+//   #.  x
+//   ######
+//   Imagining cell 'X' to be white additionally prevents region 6 from consuming
+//   three 'x' cells. (This is true regardless of what other cells region 3 would
+//   eventually occupy.)
+bool Grid::analyze_confinement(const bool verbose,
+    map<shared_ptr<Region>, set<pair<int, int>>>& cache) {
 
-    // White cells can confine black regions, by confining them to an insufficiently large space.
-    //   (Humans look for isolation here, i.e. permanently separated black regions.
-    //   That's harder for us to detect, but counting cells is similarly powerful.)
-    // White cells can't confine white regions.
-    //   (This is true for freestanding white cells, white cells added to other white regions,
-    //   and white cells added to numbered regions.)
-    // White cells can confine numbered regions, when added to other numbered regions.
-    //   This is the most complicated case to analyze. For example:
-    //   ####3
-    //   #6 xXx
-    //   #.  x
-    //   ######
-    //   Imagining cell 'X' to be white additionally prevents region 6 from consuming
-    //   three 'x' cells. (This is true regardless of what other cells region 3 would
-    //   eventually occupy.)
+    set<pair<int, int>> mark_as_black;
+    set<pair<int, int>> mark_as_white;
 
     for (int x = 0; x < m_width; ++x) {
         for (int y = 0; y < m_height; ++y) {
@@ -863,79 +900,72 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
         }
     }
 
-    if (process(verbose, mark_as_black, mark_as_white, "Confinement analysis succeeded.")) {
-        return m_sitrep;
-    }
+    return process(verbose, mark_as_black, mark_as_white, "Confinement analysis succeeded.");
+}
 
+bool Grid::analyze_hypotheticals(const bool verbose) {
+    set<pair<int, int>> mark_as_black;
+    set<pair<int, int>> mark_as_white;
 
-    if (guessing) {
-        vector<pair<int, int>> v;
+    vector<pair<int, int>> v;
 
-        for (int x = 0; x < m_width; ++x) {
-            for (int y = 0; y < m_height; ++y) {
-                if (cell(x, y) == UNKNOWN) {
-                    v.push_back(make_pair(x, y));
-                }
-            }
-        }
-
-
-        // Guess cells in a deterministic but pseudorandomized order.
-        // This attempts to avoid repeatedly guessing cells that won't get us anywhere.
-
-        auto dist = [this](const ptrdiff_t n) {
-            // random_shuffle() provides n > 0. It wants [0, n).
-            // uniform_int_distribution's ctor takes a and b with a <= b. It produces [a, b].
-            return uniform_int_distribution<ptrdiff_t>(0, n - 1)(m_prng);
-        };
-
-        random_shuffle(v.begin(), v.end(), dist);
-
-
-        for (auto u = v.begin(); u != v.end(); ++u) {
-            const int x = u->first;
-            const int y = u->second;
-
-            for (int i = 0; i < 2; ++i) {
-                const State color = i == 0 ? BLACK : WHITE;
-                auto& mark_as_diff = i == 0 ? mark_as_white : mark_as_black;
-                auto& mark_as_same = i == 0 ? mark_as_black : mark_as_white;
-
-                Grid other(*this);
-
-                other.mark(color, x, y);
-
-                SitRep sr = KEEP_GOING;
-
-                while (sr == KEEP_GOING) {
-                    sr = other.solve(false, false);
-                }
-
-                if (sr == CONTRADICTION_FOUND) {
-                    mark_as_diff.insert(make_pair(x, y));
-                    process(verbose, mark_as_black, mark_as_white,
-                        "Hypothetical contradiction found.");
-                    return m_sitrep;
-                }
-
-                if (sr == SOLUTION_FOUND) {
-                    mark_as_same.insert(make_pair(x, y));
-                    process(verbose, mark_as_black, mark_as_white,
-                        "Hypothetical solution found.");
-                    return m_sitrep;
-                }
-
-                // sr == CANNOT_PROCEED
+    for (int x = 0; x < m_width; ++x) {
+        for (int y = 0; y < m_height; ++y) {
+            if (cell(x, y) == UNKNOWN) {
+                v.push_back(make_pair(x, y));
             }
         }
     }
 
 
-    if (verbose) {
-        print("I'm stumped!");
+    // Guess cells in a deterministic but pseudorandomized order.
+    // This attempts to avoid repeatedly guessing cells that won't get us anywhere.
+
+    auto dist = [this](const ptrdiff_t n) {
+        // random_shuffle() provides n > 0. It wants [0, n).
+        // uniform_int_distribution's ctor takes a and b with a <= b. It produces [a, b].
+        return uniform_int_distribution<ptrdiff_t>(0, n - 1)(m_prng);
+    };
+
+    random_shuffle(v.begin(), v.end(), dist);
+
+
+    for (auto u = v.begin(); u != v.end(); ++u) {
+        const int x = u->first;
+        const int y = u->second;
+
+        for (int i = 0; i < 2; ++i) {
+            const State color = i == 0 ? BLACK : WHITE;
+            auto& mark_as_diff = i == 0 ? mark_as_white : mark_as_black;
+            auto& mark_as_same = i == 0 ? mark_as_black : mark_as_white;
+
+            Grid other(*this);
+
+            other.mark(color, x, y);
+
+            SitRep sr = KEEP_GOING;
+
+            while (sr == KEEP_GOING) {
+                sr = other.solve(false, false);
+            }
+
+            if (sr == CONTRADICTION_FOUND) {
+                mark_as_diff.insert(make_pair(x, y));
+                return process(verbose, mark_as_black, mark_as_white,
+                    "Hypothetical contradiction found.");
+            }
+
+            if (sr == SOLUTION_FOUND) {
+                mark_as_same.insert(make_pair(x, y));
+                return process(verbose, mark_as_black, mark_as_white,
+                    "Hypothetical solution found.");
+            }
+
+            // sr == CANNOT_PROCEED
+        }
     }
 
-    return CANNOT_PROCEED;
+    return false;
 }
 
 int Grid::known() const {
