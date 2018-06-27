@@ -1,3 +1,13 @@
+# Nurikabe Puzzle Solver
+
+This sample code, written in C++, is the [Nurikabe puzzle][wikipedia] solver that was originally presented in
+[Part 4][part4] and [Part 5][part5] of Stephan T. Lavavej's STL video lecture series in 2010.
+
+[wikipedia]: https://en.wikipedia.org/wiki/Nurikabe_(puzzle)
+[part4]: https://channel9.msdn.com/Series/C9-Lectures-Stephan-T-Lavavej-Standard-Template-Library-STL-/C9-Lectures-Stephan-T-Lavavej-Standard-Template-Library-STL-4-of-n
+[part5]: https://channel9.msdn.com/Series/C9-Lectures-Stephan-T-Lavavej-Standard-Template-Library-STL-/C9-Lectures-Stephan-T-Lavavej-Standard-Template-Library-STL-5-of-n
+
+You can contact Stephan T. Lavavej at [stl@microsoft.com](mailto:stl@microsoft.com) with any questions about this code.
 
 # Contributing
 
