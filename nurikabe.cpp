@@ -150,7 +150,6 @@ private:
     bool analyze_dual_liberties(bool verbose);
     bool analyze_unreachable_cells(bool verbose);
     bool analyze_potential_pools(bool verbose);
-    bool analyze_isolated_unknown_regions(bool verbose);
     bool analyze_confinement(bool verbose, cache_map_t& cache);
     vector<pair<int, int>> guessing_order();
     bool analyze_hypotheticals(bool verbose);
@@ -217,8 +216,7 @@ private:
     mt19937 m_prng;
 
     Grid(const Grid& other);
-    Grid& operator=(const Grid& other);
-    void swap(Grid& other);
+    Grid& operator=(const Grid& other); // Not implemented.
 };
 
 long long counter() {
@@ -602,7 +600,6 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
         || analyze_dual_liberties(verbose)
         || analyze_unreachable_cells(verbose)
         || analyze_potential_pools(verbose)
-        || analyze_isolated_unknown_regions(verbose)
         || detect_contradictions(verbose, cache)
         || analyze_confinement(verbose, cache)
         || guessing && analyze_hypotheticals(verbose)) {
@@ -773,61 +770,6 @@ bool Grid::analyze_potential_pools(const bool verbose) {
     }
 
     return process(verbose, mark_as_black, mark_as_white, "Whitened cells to prevent pools.");
-}
-
-// Look for isolated unknown regions.
-bool Grid::analyze_isolated_unknown_regions(const bool verbose) {
-    set<pair<int, int>> mark_as_black;
-    set<pair<int, int>> mark_as_white;
-
-    const bool any_black_regions = any_of(m_regions.begin(), m_regions.end(),
-        [](const shared_ptr<Region>& r) { return r->black(); });
-
-    set<pair<int, int>> analyzed;
-
-    for (int x = 0; x < m_width; ++x) {
-        for (int y = 0; y < m_height; ++y) {
-            if (cell(x, y) == UNKNOWN && analyzed.find(make_pair(x, y)) == analyzed.end()) {
-                bool encountered_black = false;
-
-                set<pair<int, int>> open;
-                set<pair<int, int>> closed;
-
-                open.insert(make_pair(x, y));
-
-                while (!open.empty()) {
-                    const pair<int, int> p = *open.begin();
-                    open.erase(open.begin());
-
-                    switch (cell(p.first, p.second)) {
-                        case UNKNOWN:
-                            if (closed.insert(p).second) {
-                                insert_valid_neighbors(open, p.first, p.second);
-                            }
-
-                            break;
-
-                        case BLACK:
-                            encountered_black = true;
-                            break;
-
-                        default:
-                            break;
-                    }
-                }
-
-                if (!encountered_black && (
-                    any_black_regions || static_cast<int>(closed.size()) < m_total_black)) {
-
-                    mark_as_white.insert(closed.begin(), closed.end());
-                }
-
-                analyzed.insert(closed.begin(), closed.end());
-            }
-        }
-    }
-
-    return process(verbose, mark_as_black, mark_as_white, "Isolated unknown regions found.");
 }
 
 // A region would be "confined" if it could not be completed.
@@ -1682,7 +1624,7 @@ Grid::Grid(const Grid& other)
     m_cells(other.m_cells),
     m_regions(),
     m_sitrep(other.m_sitrep),
-    m_output(other.m_output),
+    m_output(), // Intentionally not copied to increase performance. This copy ctor is private.
     m_prng(other.m_prng) {
 
     for (auto i = other.m_regions.begin(); i != other.m_regions.end(); ++i) {
@@ -1694,20 +1636,4 @@ Grid::Grid(const Grid& other)
             region(k->first, k->second) = *i;
         }
     }
-}
-
-Grid& Grid::operator=(const Grid& other) {
-    Grid(other).swap(*this);
-    return *this;
-}
-
-void Grid::swap(Grid& other) {
-    std::swap(m_width, other.m_width);
-    std::swap(m_height, other.m_height);
-    std::swap(m_total_black, other.m_total_black);
-    std::swap(m_cells, other.m_cells);
-    std::swap(m_regions, other.m_regions);
-    std::swap(m_sitrep, other.m_sitrep);
-    std::swap(m_output, other.m_output);
-    std::swap(m_prng, other.m_prng);
 }
