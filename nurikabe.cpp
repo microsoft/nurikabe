@@ -18,6 +18,7 @@
 #include <memory>
 #include <ostream>
 #include <queue>
+#include <random>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -197,6 +198,9 @@ private:
 
     // This stores the output that is generated during solving, to be converted into HTML later.
     vector<tuple<string, vector<vector<State>>, set<pair<int, int>>, long long>> m_output;
+
+    // This is used to guess cells in a deterministic but pseudorandomized order.
+    mt19937 m_prng;
 
     Grid(const Grid& other);
     Grid& operator=(const Grid& other);
@@ -468,7 +472,7 @@ int main() {
 
 Grid::Grid(const int width, const int height, const string& s)
     : m_width(width), m_height(height), m_total_black(width * height),
-    m_cells(), m_regions(), m_sitrep(KEEP_GOING), m_output() {
+    m_cells(), m_regions(), m_sitrep(KEEP_GOING), m_output(), m_prng(1729) {
 
     // Validate width and height.
 
@@ -865,41 +869,63 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
 
 
     if (guessing) {
+        vector<pair<int, int>> v;
+
         for (int x = 0; x < m_width; ++x) {
             for (int y = 0; y < m_height; ++y) {
                 if (cell(x, y) == UNKNOWN) {
-                    for (int i = 0; i < 2; ++i) {
-                        const State color = i == 0 ? BLACK : WHITE;
-                        auto& mark_as_diff = i == 0 ? mark_as_white : mark_as_black;
-                        auto& mark_as_same = i == 0 ? mark_as_black : mark_as_white;
-
-                        Grid other(*this);
-
-                        other.mark(color, x, y);
-
-                        SitRep sr = KEEP_GOING;
-
-                        while (sr == KEEP_GOING) {
-                            sr = other.solve(false, false);
-                        }
-
-                        if (sr == CONTRADICTION_FOUND) {
-                            mark_as_diff.insert(make_pair(x, y));
-                            process(verbose, mark_as_black, mark_as_white,
-                                "Hypothetical contradiction found.");
-                            return m_sitrep;
-                        }
-
-                        if (sr == SOLUTION_FOUND) {
-                            mark_as_same.insert(make_pair(x, y));
-                            process(verbose, mark_as_black, mark_as_white,
-                                "Hypothetical solution found.");
-                            return m_sitrep;
-                        }
-
-                        // sr == CANNOT_PROCEED
-                    }
+                    v.push_back(make_pair(x, y));
                 }
+            }
+        }
+
+
+        // Guess cells in a deterministic but pseudorandomized order.
+        // This attempts to avoid repeatedly guessing cells that won't get us anywhere.
+
+        auto dist = [this](const ptrdiff_t n) {
+            // random_shuffle() provides n > 0. It wants [0, n).
+            // uniform_int_distribution's ctor takes a and b with a <= b. It produces [a, b].
+            return uniform_int_distribution<ptrdiff_t>(0, n - 1)(m_prng);
+        };
+
+        random_shuffle(v.begin(), v.end(), dist);
+
+
+        for (auto u = v.begin(); u != v.end(); ++u) {
+            const int x = u->first;
+            const int y = u->second;
+
+            for (int i = 0; i < 2; ++i) {
+                const State color = i == 0 ? BLACK : WHITE;
+                auto& mark_as_diff = i == 0 ? mark_as_white : mark_as_black;
+                auto& mark_as_same = i == 0 ? mark_as_black : mark_as_white;
+
+                Grid other(*this);
+
+                other.mark(color, x, y);
+
+                SitRep sr = KEEP_GOING;
+
+                while (sr == KEEP_GOING) {
+                    sr = other.solve(false, false);
+                }
+
+                if (sr == CONTRADICTION_FOUND) {
+                    mark_as_diff.insert(make_pair(x, y));
+                    process(verbose, mark_as_black, mark_as_white,
+                        "Hypothetical contradiction found.");
+                    return m_sitrep;
+                }
+
+                if (sr == SOLUTION_FOUND) {
+                    mark_as_same.insert(make_pair(x, y));
+                    process(verbose, mark_as_black, mark_as_white,
+                        "Hypothetical solution found.");
+                    return m_sitrep;
+                }
+
+                // sr == CANNOT_PROCEED
             }
         }
     }
@@ -1479,7 +1505,8 @@ Grid::Grid(const Grid& other)
     m_cells(other.m_cells),
     m_regions(),
     m_sitrep(other.m_sitrep),
-    m_output(other.m_output) {
+    m_output(other.m_output),
+    m_prng(other.m_prng) {
 
     for (auto i = other.m_regions.begin(); i != other.m_regions.end(); ++i) {
         m_regions.insert(make_shared<Region>(**i));
@@ -1505,4 +1532,5 @@ void Grid::swap(Grid& other) {
     std::swap(m_regions, other.m_regions);
     std::swap(m_sitrep, other.m_sitrep);
     std::swap(m_output, other.m_output);
+    std::swap(m_prng, other.m_prng);
 }
