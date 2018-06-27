@@ -218,7 +218,7 @@ private:
     mt19937 m_prng;
 
     Grid(const Grid& other);
-    Grid& operator=(const Grid& other); // Not implemented.
+    Grid& operator=(const Grid&) = delete;
 };
 
 string format_time(const high_resolution_clock::time_point start, const high_resolution_clock::time_point finish) {
