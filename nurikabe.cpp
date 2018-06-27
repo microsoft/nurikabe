@@ -143,13 +143,15 @@ private:
         set<pair<int, int>> m_unknowns;
     };
 
+    typedef map<shared_ptr<Region>, set<pair<int, int>>> cache_map_t;
+
     bool analyze_complete_islands(bool verbose);
     bool analyze_single_liberties(bool verbose);
     bool analyze_dual_liberties(bool verbose);
     bool analyze_unreachable_cells(bool verbose);
     bool analyze_potential_pools(bool verbose);
     bool analyze_isolated_unknown_regions(bool verbose);
-    bool analyze_confinement(bool verbose, map<shared_ptr<Region>, set<pair<int, int>>>& cache);
+    bool analyze_confinement(bool verbose, cache_map_t& cache);
     vector<pair<int, int>> guessing_order();
     bool analyze_hypotheticals(bool verbose);
 
@@ -184,11 +186,10 @@ private:
     bool unreachable(int x_root, int y_root,
         set<pair<int, int>> discovered = set<pair<int, int>>()) const;
 
-    bool confined(const shared_ptr<Region>& r,
-        map<shared_ptr<Region>, set<pair<int, int>>>& cache,
+    bool confined(const shared_ptr<Region>& r, cache_map_t& cache,
         const set<pair<int, int>>& verboten = set<pair<int, int>>()) const;
 
-    string detect_contradictions(map<shared_ptr<Region>, set<pair<int, int>>>& cache) const;
+    bool detect_contradictions(bool verbose, cache_map_t& cache);
 
 
     int m_width; // x is valid within [0, m_width).
@@ -566,27 +567,16 @@ Grid::Grid(const int width, const int height, const string& s)
 }
 
 Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
-    map<shared_ptr<Region>, set<pair<int, int>>> cache;
+    cache_map_t cache;
 
 
-    // Look for contradictions. Do this first.
-
-    {
-        const string s = detect_contradictions(cache);
-
-        if (!s.empty()) {
-            if (verbose) {
-                print(s);
-            }
-
-            return CONTRADICTION_FOUND;
-        }
-    }
-
-
-    // See if we're done. Do this second.
+    // See if we're done. Before declaring victory, look for contradictions.
 
     if (known() == m_width * m_height) {
+        if (detect_contradictions(verbose, cache)) {
+            return CONTRADICTION_FOUND;
+        }
+
         if (verbose) {
             print("I'm done!");
         }
@@ -598,12 +588,22 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
     // Run increasingly expensive steps of analysis.
     // Return as soon as one succeeds.
 
+    // Running detect_contradictions() just before analyze_confinement() increases performance.
+    // detect_contradictions() is moderately expensive, so it should be run after extremely cheap
+    // steps of analysis. However, detect_contradictions() accelerates analyze_confinement(),
+    // which is even more expensive. This doesn't affect correctness:
+    // * We always run detect_contradictions() before declaring victory.
+    // * The other steps of analysis are robust; if they attempt to fuse two numbered regions
+    // or mark an already known cell, they bail out early.
+    // * analyze_confinement() can still assume that it has a cache.
+
     if (analyze_complete_islands(verbose)
         || analyze_single_liberties(verbose)
         || analyze_dual_liberties(verbose)
         || analyze_unreachable_cells(verbose)
         || analyze_potential_pools(verbose)
         || analyze_isolated_unknown_regions(verbose)
+        || detect_contradictions(verbose, cache)
         || analyze_confinement(verbose, cache)
         || guessing && analyze_hypotheticals(verbose)) {
 
@@ -858,9 +858,7 @@ bool Grid::analyze_isolated_unknown_regions(const bool verbose) {
 //   Imagining cell 'X' to be white additionally prevents region 6 from consuming
 //   three 'x' cells. (This is true regardless of what other cells region 3 would
 //   eventually occupy.)
-bool Grid::analyze_confinement(const bool verbose,
-    map<shared_ptr<Region>, set<pair<int, int>>>& cache) {
-
+bool Grid::analyze_confinement(const bool verbose, cache_map_t& cache) {
     set<pair<int, int>> mark_as_black;
     set<pair<int, int>> mark_as_white;
 
@@ -1204,19 +1202,19 @@ bool Grid::process(const bool verbose, const set<pair<int, int>>& mark_as_black,
 }
 
 template <typename F> void Grid::for_valid_neighbors(const int x, const int y, F f) const {
-    if (valid(x - 1, y)) {
+    if (x > 0) {
         f(x - 1, y);
     }
 
-    if (valid(x + 1, y)) {
+    if (x + 1 < m_width) {
         f(x + 1, y);
     }
 
-    if (valid(x, y - 1)) {
+    if (y > 0) {
         f(x, y - 1);
     }
 
-    if (valid(x, y + 1)) {
+    if (y + 1 < m_height) {
         f(x, y + 1);
     }
 }
@@ -1444,9 +1442,18 @@ bool Grid::unreachable(const int x_root, const int y_root, set<pair<int, int>> d
     return true;
 }
 
+namespace {
+    // This explicitly specified underlying type significantly increases performance.
+    enum Flag : unsigned char {
+        NONE,
+        OPEN,
+        CLOSED,
+        VERBOTEN
+    };
+}
+
 // Is r confined, assuming that we can't consume verboten cells?
-bool Grid::confined(const shared_ptr<Region>& r,
-    map<shared_ptr<Region>, set<pair<int, int>>>& cache,
+bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
     const set<pair<int, int>>& verboten) const {
 
     // When we look for contradictions, we run confinement analysis (A) without verboten cells.
@@ -1472,26 +1479,56 @@ bool Grid::confined(const shared_ptr<Region>& r,
         }
     }
 
+
+    vector<vector<Flag>> flags(m_width, vector<Flag>(m_height, NONE));
+
     // The open set contains cells that we're considering adding to the region.
-    set<pair<int, int>> open(r->unk_begin(), r->unk_end());
+    for (auto i = r->unk_begin(); i != r->unk_end(); ++i) {
+        flags[i->first][i->second] = OPEN;
+    }
 
     // The closed set contains cells that we've hypothetically added to the region.
-    set<pair<int, int>> closed(r->begin(), r->end());
+    for (auto i = r->begin(); i != r->end(); ++i) {
+        flags[i->first][i->second] = CLOSED;
+    }
 
-    // While we have cells to consider and we need to consume more cells...
-    while (!open.empty()
-        && (r->black() && static_cast<int>(closed.size()) < m_total_black
-            || r->white()
-            || r->numbered() && static_cast<int>(closed.size()) < r->number())) {
+    int closed_size = r->size();
+
+    // Flag the verboten cells last, because this could overwrite open flags.
+    for (auto i = verboten.begin(); i != verboten.end(); ++i) {
+        flags[i->first][i->second] = VERBOTEN;
+    }
+
+    // While we need to consume more cells...
+    while (r->black() && closed_size < m_total_black
+        || r->white()
+        || r->numbered() && closed_size < r->number()) {
+
+        // Do we have a cell to consider?
+        const int BOGUS_COORD = -1;
+        pair<int, int> p(BOGUS_COORD, BOGUS_COORD);
+
+        for (int x = 0; x < m_width; ++x) {
+            for (int y = 0; y < m_height; ++y) {
+                Flag& f = flags[x][y];
+
+                if (f == OPEN) {
+                    f = NONE;
+                    p = make_pair(x, y);
+                    break;
+                }
+            }
+
+            if (p.first != BOGUS_COORD) {
+                break;
+            }
+        }
+
+        if (p.first == BOGUS_COORD) {
+            break; // We don't.
+        }
 
         // Consider cell p.
-        const pair<int, int> p = *open.begin();
-        open.erase(open.begin());
-
-        // If it's verboten or we've already consumed it, discard it.
-        if (verboten.find(p) != verboten.end() || closed.find(p) != closed.end()) {
-            continue;
-        }
 
         // We need to compare our region r with p's region (if any).
         const auto& area = region(p.first, p.second);
@@ -1544,25 +1581,54 @@ bool Grid::confined(const shared_ptr<Region>& r,
         }
 
         if (!area) { // Consume an unknown cell.
-            closed.insert(p);
-            insert_valid_neighbors(open, p.first, p.second);
+            flags[p.first][p.second] = CLOSED;
+            ++closed_size;
+
+            for_valid_neighbors(p.first, p.second, [&](const int a, const int b) {
+                Flag& f = flags[a][b];
+
+                if (f == NONE) {
+                    f = OPEN;
+                }
+            });
 
             if (verboten.empty()) {
                 cache[r].insert(p);
             }
         } else { // Consume a whole region.
-            closed.insert(area->begin(), area->end());
-            open.insert(area->unk_begin(), area->unk_end());
+            for (auto i = area->begin(); i != area->end(); ++i) {
+                flags[i->first][i->second] = CLOSED;
+            }
+
+            closed_size += area->size();
+
+            for (auto i = area->unk_begin(); i != area->unk_end(); ++i) {
+                Flag& f = flags[i->first][i->second];
+
+                if (f == NONE) {
+                    f = OPEN;
+                }
+            }
         }
     }
 
     // We're confined if we still need to consume more cells.
-    return r->black() && static_cast<int>(closed.size()) < m_total_black
+    return r->black() && closed_size < m_total_black
         || r->white()
-        || r->numbered() && static_cast<int>(closed.size()) < r->number();
+        || r->numbered() && closed_size < r->number();
 }
 
-string Grid::detect_contradictions(map<shared_ptr<Region>, set<pair<int, int>>>& cache) const {
+bool Grid::detect_contradictions(const bool verbose, cache_map_t& cache) {
+    auto uh_oh = [&](const string& s) -> bool {
+        if (verbose) {
+            print(s);
+        }
+
+        m_sitrep = CONTRADICTION_FOUND;
+
+        return true;
+    };
+
     for (int x = 0; x < m_width - 1; ++x) {
         for (int y = 0; y < m_height - 1; ++y) {
             if (cell(x, y) == BLACK
@@ -1570,7 +1636,7 @@ string Grid::detect_contradictions(map<shared_ptr<Region>, set<pair<int, int>>>&
                 && cell(x, y + 1) == BLACK
                 && cell(x + 1, y + 1) == BLACK) {
 
-                return "Contradiction found! Pool detected.";
+                return uh_oh("Contradiction found! Pool detected.");
             }
         }
     }
@@ -1587,26 +1653,26 @@ string Grid::detect_contradictions(map<shared_ptr<Region>, set<pair<int, int>>>&
         if (r.white() && impossibly_big_white_region(r.size())
             || r.numbered() && r.size() > r.number()) {
 
-            return "Contradiction found! Gigantic region detected.";
+            return uh_oh("Contradiction found! Gigantic region detected.");
         }
 
         (r.black() ? black_cells : white_cells) += r.size();
 
 
         if (confined(*i, cache)) {
-            return "Contradiction found! Confined region detected.";
+            return uh_oh("Contradiction found! Confined region detected.");
         }
     }
 
     if (black_cells > m_total_black) {
-        return "Contradiction found! Too many black cells detected.";
+        return uh_oh("Contradiction found! Too many black cells detected.");
     }
 
     if (white_cells > m_width * m_height - m_total_black) {
-        return "Contradiction found! Too many white/numbered cells detected.";
+        return uh_oh("Contradiction found! Too many white/numbered cells detected.");
     }
 
-    return "";
+    return false;
 }
 
 Grid::Grid(const Grid& other)
