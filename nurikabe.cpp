@@ -4,7 +4,7 @@
 // Nurikabe Solver by Stephan T. Lavavej
 // https://en.wikipedia.org/wiki/Nurikabe_(puzzle)
 
-// cl /EHsc /nologo /W4 /MT /O2 /GL nurikabe.cpp && nurikabe && output.html
+// cl /EHsc /nologo /W4 /MT /O2 /GL nurikabe.cpp && nurikabe && wikipedia_hard.html
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -20,6 +20,7 @@
 #include <queue>
 #include <regex>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -40,6 +41,8 @@ public:
     };
 
     SitRep solve(bool verbose = true, bool guessing = true);
+
+    int known() const;
 
     void write(ostream& os, long long start, long long finish) const;
 
@@ -193,7 +196,7 @@ private:
     SitRep m_sitrep;
 
     // This stores the output that is generated during solving, to be converted into HTML later.
-    vector<tuple<string, vector<vector<State>>, set<pair<int, int>>>> m_output;
+    vector<tuple<string, vector<vector<State>>, set<pair<int, int>>, long long>> m_output;
 
     Grid(const Grid& other);
     Grid& operator=(const Grid& other);
@@ -212,11 +215,31 @@ long long frequency() {
     return li.QuadPart;
 }
 
-int main() {
-    try {
-        const long long start = counter();
+string format_time(const long long start, const long long finish) {
+    ostringstream oss;
 
-        Grid g(10, 9,
+    if ((finish - start) * 1000 < frequency()) {
+        oss << (finish - start) * 1000000.0 / frequency() << " microseconds";
+    } else if (finish - start < frequency()) {
+        oss << (finish - start) * 1000.0 / frequency() << " milliseconds";
+    } else {
+        oss << (finish - start) * 1.0 / frequency() << " seconds";
+    }
+
+    return oss.str();
+}
+
+int main() {
+    struct Data {
+        const char * name;
+        int w;
+        int h;
+        const char * s;
+    };
+
+    const Data data[] = {
+        {
+            "wikipedia_hard", 10, 9,
             "2        2\n"
             "      2   \n"
             " 2  7     \n"
@@ -226,16 +249,214 @@ int main() {
             "2  4      \n"
             "          \n"
             " 1    2 4 \n"
-        );
+        },
 
-        while (g.solve() == Grid::KEEP_GOING) { }
+        {
+            "wikipedia_easy", 10, 10,
+            "1   4  4 2\n"
+            "          \n"
+            " 1   2    \n"
+            "  1   1  2\n"
+            "1    3    \n"
+            "  6      5\n"
+            "          \n"
+            "     1   2\n"
+            "    2  2  \n"
+            "          \n"
+        },
 
-        const long long finish = counter();
+        { // http://nikoli.com/en/puzzles/nurikabe/
+            "nikoli_1", 10, 10,
+            "       5 2\n"
+            "3         \n"
+            " 4  2     \n"
+            "      3   \n"
+            " 4   4    \n"
+            "         3\n"
+            "          \n"
+            "          \n"
+            " 3  3     \n"
+            "  1  1 3 3\n"
+        },
 
-        ofstream f("output.html");
+        {
+            "nikoli_2", 10, 10,
+            "6 2 3    3\n"
+            "          \n"
+            "         4\n"
+            "          \n"
+            "    2    2\n"
+            "3    5    \n"
+            "          \n"
+            "3         \n"
+            "          \n"
+            "4    5 4 1\n"
+        },
 
-        g.write(f, start, finish);
+        {
+            "nikoli_3", 10, 10,
+            " 3    4   \n"
+            "     6    \n"
+            "       2  \n"
+            "      3   \n"
+            "        2 \n"
+            " 4     3  \n"
+            "         1\n"
+            " 10      3 \n"
+            "          \n"
+            "  3      2\n"
+        },
 
+        {
+            "nikoli_4", 18, 10,
+            "  4            1 3\n"
+            " 3    5   1 2     \n"
+            "       5 3        \n"
+            "            2 3   \n"
+            "  4             3 \n"
+            " 3             4  \n"
+            "   1 1            \n"
+            "        3 4       \n"
+            "     1 1   5    5 \n"
+            "4 4            3  \n"
+        },
+
+        {
+            "nikoli_5", 18, 10,
+            " 1 1    1     1   \n"
+            "    5    2     1  \n"
+            "        1     1   \n"
+            "     5         1  \n"
+            "1 1       4   1   \n"
+            " 1     3     7    \n"
+            "  3              6\n"
+            "    4   2  4      \n"
+            "      5         5 \n"
+            " 1           5    \n"
+        },
+
+        {
+            "nikoli_6", 18, 10,
+            "                  \n"
+            "1    12     3 12    \n"
+            "                 2\n"
+            "2    3     3    3 \n"
+            "    1     1       \n"
+            "3    1            \n"
+            "   2  2 3 2       \n"
+            "2           1     \n"
+            "  3               \n"
+            "1              12 1\n"
+        },
+
+        {
+            "nikoli_7", 24, 14,
+            "    5                   \n"
+            "          2 6    7 3   4\n"
+            "  1    5        3 5     \n"
+            " 7   6                 1\n"
+            "        4               \n"
+            "   1      1   5      3  \n"
+            "  2  3                  \n"
+            "        3   3   2  7    \n"
+            "                        \n"
+            "6   1    5   5   1    5 \n"
+            "      6        5     3  \n"
+            "   4               4    \n"
+            " 5          1           \n"
+            "        3 4     5       \n"
+        },
+
+        {
+            "nikoli_8", 24, 14,
+            "    2 1           5 5   \n"
+            "  4             12     1 \n"
+            " 7      1               \n"
+            "              1        3\n"
+            "          7             \n"
+            "6            5          \n"
+            "           6           1\n"
+            "9           15           \n"
+            "          3            3\n"
+            "             8          \n"
+            "2        8              \n"
+            "               4      3 \n"
+            " 4     5             3  \n"
+            "   8 3           2 4    \n"
+        },
+
+        {
+            "nikoli_9", 36, 20,
+            "2   2  1  1               1         \n"
+            "   4    3        9      8      5    \n"
+            "      1        7                   5\n"
+            "4      1  1  4              2    1  \n"
+            "      2  3         2         1 3    \n"
+            "4   2           5    2              \n"
+            "       1  1 17          3 4        4 \n"
+            "                 9              21  2\n"
+            "2       2                 4         \n"
+            "  7  4            3   13             \n"
+            "          1               6    1    \n"
+            "  4      2    9  1                  \n"
+            "     6               3          9   \n"
+            "22                  1      8  1      \n"
+            "   1   6   1   4                    \n"
+            "    2     2     1      1       1   1\n"
+            "                  4     2           \n"
+            "   3 3   2   2       8      2     3 \n"
+            "            1              1        \n"
+            "                3       5       5   \n"
+        },
+
+        {
+            "nikoli_10", 36, 20,
+            "           4            2           \n"
+            "3 4          2   7         8      2 \n"
+            "    7      5   1   8 5   1  2  4   2\n"
+            "6    4       3          2 2         \n"
+            "           6                   4    \n"
+            "    2             1  2           2  \n"
+            "        1       4     4    4  1     \n"
+            " 1                  3            4 4\n"
+            "     2     4  4            4        \n"
+            "       5  3                   2 4   \n"
+            " 5 1              1    3   8   2    \n"
+            "     1   2                          \n"
+            "2            2 5           4     2 1\n"
+            "                             2      \n"
+            "1  2   4  7   18   1            1   1\n"
+            "                     2   8 4        \n"
+            "    3           18     1          4  \n"
+            "                 4                4 \n"
+            "      3 1   4      4    2    4   4  \n"
+            "6      1  3                 4       \n"
+        },
+    };
+
+    try {
+        for (auto i = data; i != data + sizeof(data) / sizeof(data[0]); ++i) {
+            const long long start = counter();
+
+            Grid g(i->w, i->h, i->s);
+
+            while (g.solve() == Grid::KEEP_GOING) { }
+
+            const long long finish = counter();
+
+
+            ofstream f(i->name + string(".html"));
+
+            g.write(f, start, finish);
+
+
+            cout << i->name << ": " << format_time(start, finish) << ", ";
+
+            const int k = g.known();
+            const int cells = i->w * i->h;
+
+            cout << k << "/" << cells << " (" << k * 100.0 / cells << "%) solved" << endl;
+        }
     } catch (const exception& e) {
         cerr << "EXCEPTION CAUGHT! \"" << e.what() << "\"" << endl;
         return EXIT_FAILURE;
@@ -348,17 +569,7 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
 
     // See if we're done. Do this second.
 
-    if ([this]() -> bool {
-        for (int x = 0; x < m_width; ++x) {
-            for (int y = 0; y < m_height; ++y) {
-                if (cell(x, y) == UNKNOWN) {
-                    return false;
-                }
-            }
-        }
-
-        return true;
-    }()) {
+    if (known() == m_width * m_height) {
         if (verbose) {
             print("I'm done!");
         }
@@ -701,6 +912,20 @@ Grid::SitRep Grid::solve(const bool verbose, const bool guessing) {
     return CANNOT_PROCEED;
 }
 
+int Grid::known() const {
+    int ret = 0;
+
+    for (int x = 0; x < m_width; ++x) {
+        for (int y = 0; y < m_height; ++y) {
+            if (cell(x, y) != UNKNOWN) {
+                ++ret;
+            }
+        }
+    }
+
+    return ret;
+}
+
 void Grid::write(ostream& os, const long long start, const long long finish) const {
     os <<
         "<!DOCTYPE html>\n"
@@ -733,12 +958,17 @@ void Grid::write(ostream& os, const long long start, const long long finish) con
         "  </head>\n"
         "  <body>\n";
 
+    long long old_ctr = start;
+
     for (auto i = m_output.begin(); i != m_output.end(); ++i) {
         const string& s = get<0>(*i);
         const auto& v = get<1>(*i);
         const auto& updated = get<2>(*i);
+        const long long ctr = get<3>(*i);
 
-        os << s << "\n";
+        os << s << " (" << format_time(old_ctr, ctr) << ")\n";
+
+        old_ctr = ctr;
 
         os << "<table>\n";
 
@@ -765,7 +995,7 @@ void Grid::write(ostream& os, const long long start, const long long finish) con
         os << "</table><br/>\n";
     }
 
-    os << "Total: " << (finish - start) * 1000.0 / frequency() << " ms\n";
+    os << "Total: " << format_time(start, finish) << "\n";
 
     os <<
         "  </body>\n"
@@ -801,7 +1031,7 @@ void Grid::print(const string& s, const set<pair<int, int>>& updated) {
         }
     }
 
-    m_output.push_back(make_tuple(s, v, updated));
+    m_output.push_back(make_tuple(s, v, updated, counter()));
 }
 
 bool Grid::process(const bool verbose, const set<pair<int, int>>& mark_as_black,
