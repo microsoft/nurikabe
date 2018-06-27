@@ -4,7 +4,7 @@
 // Nurikabe Solver by Stephan T. Lavavej
 // https://en.wikipedia.org/wiki/Nurikabe_(puzzle)
 
-// cl /EHsc /nologo /W4 /MT /O2 /GL nurikabe.cpp && nurikabe && wikipedia_hard.html
+// cl /EHsc /nologo /W4 /std:c++17 /MT /O2 /GL nurikabe.cpp && nurikabe && wikipedia_hard.html
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -878,13 +878,7 @@ vector<pair<int, int>> Grid::guessing_order() {
 
     // Randomly shuffle the unknown cells.
 
-    auto dist = [this](const ptrdiff_t n) {
-        // random_shuffle() provides n > 0. It wants [0, n).
-        // uniform_int_distribution's ctor takes a and b with a <= b. It produces [a, b].
-        return uniform_int_distribution<ptrdiff_t>(0, n - 1)(m_prng);
-    };
-
-    random_shuffle(x_y_manhattan.begin(), x_y_manhattan.end(), dist);
+    shuffle(x_y_manhattan.begin(), x_y_manhattan.end(), m_prng);
 
 
     // Determine the Manhattan distance from each unknown cell to the nearest white cell.
