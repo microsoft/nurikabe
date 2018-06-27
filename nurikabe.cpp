@@ -495,7 +495,7 @@ Grid::Grid(const int width, const int height, const string& s)
 
     vector<int> v;
 
-    const regex r("(\\d+)|( )|(\\n)|[^\\d \\n]");
+    const regex r(R"((\d+)|( )|(\n)|[^\d \n])");
 
     for (sregex_iterator i(s.begin(), s.end(), r), end; i != end; ++i) {
         const smatch& m = *i;
@@ -974,36 +974,37 @@ int Grid::known() const {
 
 void Grid::write(ostream& os, const high_resolution_clock::time_point start, const high_resolution_clock::time_point finish) const {
     os <<
-        "<!DOCTYPE html>\n"
-        "<html>\n"
-        "  <head>\n"
-        "    <meta http-equiv=\"Content-Type\" content=\"text/html;charset=utf-8\" />\n"
-        "    <style type=\"text/css\">\n"
-        "      body {\n"
-        "        font-family: Verdana, sans-serif;\n"
-        "        line-height: 1.4;\n"
-        "      }\n"
-        "      table {\n"
-        "        border: solid 3px #000000;\n"
-        "        border-collapse: collapse;\n"
-        "      }\n"
-        "      td {\n"
-        "        border: solid 1px #000000;\n"
-        "        text-align: center;\n"
-        "        width: 20px;\n"
-        "        height: 20px;\n"
-        "      }\n"
-        "      td.unknown   { background-color: #C0C0C0; }\n"
-        "      td.white.new { background-color: #FFFF00; }\n"
-        "      td.white.old { }\n"
-        "      td.black.new { background-color: #008080; }\n"
-        "      td.black.old { background-color: #808080; }\n"
-        "      td.number    { }\n"
-        "      td.failed    { border: solid 3px #000000; }\n"
-        "    </style>\n"
-        "    <title>Nurikabe</title>\n"
-        "  </head>\n"
-        "  <body>\n";
+R"(<!DOCTYPE html>
+<html>
+  <head>
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+    <style type="text/css">
+      body {
+        font-family: Verdana, sans-serif;
+        line-height: 1.4;
+      }
+      table {
+        border: solid 3px #000000;
+        border-collapse: collapse;
+      }
+      td {
+        border: solid 1px #000000;
+        text-align: center;
+        width: 20px;
+        height: 20px;
+      }
+      td.unknown   { background-color: #C0C0C0; }
+      td.white.new { background-color: #FFFF00; }
+      td.white.old { }
+      td.black.new { background-color: #008080; }
+      td.black.old { background-color: #808080; }
+      td.number    { }
+      td.failed    { border: solid 3px #000000; }
+    </style>
+    <title>Nurikabe</title>
+  </head>
+  <body>
+)";
 
     high_resolution_clock::time_point old_ctr = start;
 
