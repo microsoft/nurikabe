@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <exception>
 #include <fstream>
 #include <iostream>
@@ -19,6 +20,7 @@
 #include <ostream>
 #include <queue>
 #include <random>
+#include <ratio>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -27,8 +29,8 @@
 #include <tuple>
 #include <utility>
 #include <vector>
-#include <windows.h>
 using namespace std;
+using namespace std::chrono;
 
 class Grid {
 public:
@@ -45,7 +47,7 @@ public:
 
     int known() const;
 
-    void write(ostream& os, long long start, long long finish) const;
+    void write(ostream& os, high_resolution_clock::time_point start, high_resolution_clock::time_point finish) const;
 
 private:
     // The states that a cell can be in. Numbered cells are positive,
@@ -209,7 +211,7 @@ private:
     SitRep m_sitrep;
 
     // This stores the output that is generated during solving, to be converted into HTML later.
-    vector<tuple<string, vector<vector<State>>, set<pair<int, int>>, long long,
+    vector<tuple<string, vector<vector<State>>, set<pair<int, int>>, high_resolution_clock::time_point,
         int, set<pair<int, int>>>> m_output;
 
     // This is used to guess cells in a deterministic but pseudorandomized order.
@@ -219,27 +221,15 @@ private:
     Grid& operator=(const Grid& other); // Not implemented.
 };
 
-long long counter() {
-    LARGE_INTEGER li;
-    QueryPerformanceCounter(&li);
-    return li.QuadPart;
-}
-
-long long frequency() {
-    LARGE_INTEGER li;
-    QueryPerformanceFrequency(&li);
-    return li.QuadPart;
-}
-
-string format_time(const long long start, const long long finish) {
+string format_time(const high_resolution_clock::time_point start, const high_resolution_clock::time_point finish) {
     ostringstream oss;
 
-    if ((finish - start) * 1000 < frequency()) {
-        oss << (finish - start) * 1000000.0 / frequency() << " microseconds";
-    } else if (finish - start < frequency()) {
-        oss << (finish - start) * 1000.0 / frequency() << " milliseconds";
+    if (finish - start < 1ms) {
+        oss << duration_cast<duration<double, micro>>(finish - start).count() << " microseconds";
+    } else if (finish - start < 1s) {
+        oss << duration_cast<duration<double, milli>>(finish - start).count() << " milliseconds";
     } else {
-        oss << (finish - start) * 1.0 / frequency() << " seconds";
+        oss << duration_cast<duration<double>>(finish - start).count() << " seconds";
     }
 
     return oss.str();
@@ -452,13 +442,13 @@ int main() {
 
     try {
         for (auto i = data; i != data + sizeof(data) / sizeof(data[0]); ++i) {
-            const long long start = counter();
+            const auto start = high_resolution_clock::now();
 
             Grid g(i->w, i->h, i->s);
 
             while (g.solve() == Grid::KEEP_GOING) { }
 
-            const long long finish = counter();
+            const auto finish = high_resolution_clock::now();
 
 
             ofstream f(i->name + string(".html"));
@@ -982,7 +972,7 @@ int Grid::known() const {
     return ret;
 }
 
-void Grid::write(ostream& os, const long long start, const long long finish) const {
+void Grid::write(ostream& os, const high_resolution_clock::time_point start, const high_resolution_clock::time_point finish) const {
     os <<
         "<!DOCTYPE html>\n"
         "<html>\n"
@@ -1015,13 +1005,13 @@ void Grid::write(ostream& os, const long long start, const long long finish) con
         "  </head>\n"
         "  <body>\n";
 
-    long long old_ctr = start;
+    high_resolution_clock::time_point old_ctr = start;
 
     for (auto i = m_output.begin(); i != m_output.end(); ++i) {
         const string& s = get<0>(*i);
         const auto& v = get<1>(*i);
         const auto& updated = get<2>(*i);
-        const long long ctr = get<3>(*i);
+        const high_resolution_clock::time_point ctr = get<3>(*i);
         const int failed_guesses = get<4>(*i);
         const auto& failed_coords = get<5>(*i);
 
@@ -1101,7 +1091,7 @@ void Grid::print(const string& s, const set<pair<int, int>>& updated,
         }
     }
 
-    m_output.push_back(make_tuple(s, v, updated, counter(), failed_guesses, failed_coords));
+    m_output.push_back(make_tuple(s, v, updated, high_resolution_clock::now(), failed_guesses, failed_coords));
 }
 
 bool Grid::process(const bool verbose, const set<pair<int, int>>& mark_as_black,
