@@ -874,20 +874,9 @@ vector<pair<int, int>> Grid::guessing_order() {
     // Determine the Manhattan distance from each unknown cell to the nearest white cell.
     // There's probably a cleverer algorithm for this.
 
-    for (auto i = x_y_manhattan.begin(); i != x_y_manhattan.end(); ++i) {
-        const int x1 = get<0>(*i);
-        const int y1 = get<1>(*i);
-        int& manhattan = get<2>(*i);
-
-        for (auto k = white_cells.begin(); k != white_cells.end(); ++k) {
-            const int x2 = k->first;
-            const int y2 = k->second;
-
-            const int d = abs(x1 - x2) + abs(y1 - y2);
-
-            if (d < manhattan) {
-                manhattan = d;
-            }
+    for (auto& [ x1, y1, manhattan ] : x_y_manhattan) {
+        for (const auto& [ x2, y2 ] : white_cells) {
+            manhattan = min(manhattan, abs(x1 - x2) + abs(y1 - y2));
         }
     }
 
@@ -918,10 +907,7 @@ bool Grid::analyze_hypotheticals(const bool verbose) {
     int failed_guesses = 0;
     set<pair<int, int>> failed_coords;
 
-    for (auto u = v.begin(); u != v.end(); ++u) {
-        const int x = u->first;
-        const int y = u->second;
-
+    for (const auto& [ x, y ] : v) {
         for (int i = 0; i < 2; ++i) {
             const State color = i == 0 ? BLACK : WHITE;
             auto& mark_as_diff = i == 0 ? mark_as_white : mark_as_black;
@@ -1008,14 +994,7 @@ R"(<!DOCTYPE html>
 
     high_resolution_clock::time_point old_ctr = start;
 
-    for (auto i = m_output.begin(); i != m_output.end(); ++i) {
-        const string& s = get<0>(*i);
-        const auto& v = get<1>(*i);
-        const auto& updated = get<2>(*i);
-        const high_resolution_clock::time_point ctr = get<3>(*i);
-        const int failed_guesses = get<4>(*i);
-        const auto& failed_coords = get<5>(*i);
-
+    for (const auto& [ s, v, updated, ctr, failed_guesses, failed_coords ] : m_output) {
         os << s << " (" << format_time(old_ctr, ctr) << ")\n";
 
         if (failed_guesses == 1) {
@@ -1103,12 +1082,12 @@ bool Grid::process(const bool verbose, const set<pair<int, int>>& mark_as_black,
         return false;
     }
 
-    for (auto i = mark_as_black.begin(); i != mark_as_black.end(); ++i) {
-        mark(BLACK, i->first, i->second);
+    for (const auto& [ x, y ] : mark_as_black) {
+        mark(BLACK, x, y);
     }
 
-    for (auto i = mark_as_white.begin(); i != mark_as_white.end(); ++i) {
-        mark(WHITE, i->first, i->second);
+    for (const auto& [ x, y ] : mark_as_white) {
+        mark(WHITE, x, y);
     }
 
     if (verbose) {
@@ -1309,9 +1288,7 @@ bool Grid::unreachable(const int x_root, const int y_root, set<pair<int, int>> d
     discovered.insert(make_pair(x_root, y_root));
 
     while (!q.empty()) {
-        const int x_curr = get<0>(q.front());
-        const int y_curr = get<1>(q.front());
-        const int n_curr = get<2>(q.front());
+        const auto [ x_curr, y_curr, n_curr ] = q.front();
         q.pop();
 
         set<shared_ptr<Region>> white_regions;
