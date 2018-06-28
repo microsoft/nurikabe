@@ -975,10 +975,10 @@ int Grid::known() const {
 void Grid::write(ostream& os, const high_resolution_clock::time_point start, const high_resolution_clock::time_point finish) const {
     os <<
 R"(<!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
     <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
-    <style type="text/css">
+    <style>
       body {
         font-family: Verdana, sans-serif;
         line-height: 1.4;
