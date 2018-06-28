@@ -236,14 +236,14 @@ string format_time(const high_resolution_clock::time_point start, const high_res
 }
 
 int main() {
-    struct Data {
+    struct Puzzle {
         const char * name;
         int w;
         int h;
         const char * s;
     };
 
-    const Data data[] = {
+    const array<Puzzle, 12> puzzles = { {
         {
             "wikipedia_hard", 10, 9,
             "2        2\n"
@@ -438,28 +438,28 @@ int main() {
             "      3 1   4      4    2    4   4  \n"
             "6      1  3                 4       \n"
         },
-    };
+    } };
 
     try {
-        for (auto i = data; i != data + sizeof(data) / sizeof(data[0]); ++i) {
+        for (const auto& puzzle : puzzles) {
             const auto start = high_resolution_clock::now();
 
-            Grid g(i->w, i->h, i->s);
+            Grid g(puzzle.w, puzzle.h, puzzle.s);
 
             while (g.solve() == Grid::KEEP_GOING) { }
 
             const auto finish = high_resolution_clock::now();
 
 
-            ofstream f(i->name + string(".html"));
+            ofstream f(puzzle.name + string(".html"));
 
             g.write(f, start, finish);
 
 
-            cout << i->name << ": " << format_time(start, finish) << ", ";
+            cout << puzzle.name << ": " << format_time(start, finish) << ", ";
 
             const int k = g.known();
-            const int cells = i->w * i->h;
+            const int cells = puzzle.w * puzzle.h;
 
             cout << k << "/" << cells << " (" << k * 100.0 / cells << "%) solved" << endl;
         }
