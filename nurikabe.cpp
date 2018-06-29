@@ -47,7 +47,7 @@ public:
 
     int known() const;
 
-    void write(ostream& os, high_resolution_clock::time_point start, high_resolution_clock::time_point finish) const;
+    void write(ostream& os, steady_clock::time_point start, steady_clock::time_point finish) const;
 
 private:
     // The states that a cell can be in. Numbered cells are positive,
@@ -211,7 +211,7 @@ private:
     SitRep m_sitrep;
 
     // This stores the output that is generated during solving, to be converted into HTML later.
-    vector<tuple<string, vector<vector<State>>, set<pair<int, int>>, high_resolution_clock::time_point,
+    vector<tuple<string, vector<vector<State>>, set<pair<int, int>>, steady_clock::time_point,
         int, set<pair<int, int>>>> m_output;
 
     // This is used to guess cells in a deterministic but pseudorandomized order.
@@ -221,7 +221,7 @@ private:
     Grid& operator=(const Grid&) = delete;
 };
 
-string format_time(const high_resolution_clock::time_point start, const high_resolution_clock::time_point finish) {
+string format_time(const steady_clock::time_point start, const steady_clock::time_point finish) {
     ostringstream oss;
 
     if (finish - start < 1ms) {
@@ -442,13 +442,13 @@ int main() {
 
     try {
         for (const auto& puzzle : puzzles) {
-            const auto start = high_resolution_clock::now();
+            const auto start = steady_clock::now();
 
             Grid g(puzzle.w, puzzle.h, puzzle.s);
 
             while (g.solve() == Grid::KEEP_GOING) { }
 
-            const auto finish = high_resolution_clock::now();
+            const auto finish = steady_clock::now();
 
 
             ofstream f(puzzle.name + string(".html"));
@@ -958,7 +958,7 @@ int Grid::known() const {
     return ret;
 }
 
-void Grid::write(ostream& os, const high_resolution_clock::time_point start, const high_resolution_clock::time_point finish) const {
+void Grid::write(ostream& os, const steady_clock::time_point start, const steady_clock::time_point finish) const {
     os <<
 R"(<!DOCTYPE html>
 <html lang="en">
@@ -992,7 +992,7 @@ R"(<!DOCTYPE html>
   <body>
 )";
 
-    high_resolution_clock::time_point old_ctr = start;
+    steady_clock::time_point old_ctr = start;
 
     for (const auto& [ s, v, updated, ctr, failed_guesses, failed_coords ] : m_output) {
         os << s << " (" << format_time(old_ctr, ctr) << ")\n";
@@ -1071,7 +1071,7 @@ void Grid::print(const string& s, const set<pair<int, int>>& updated,
         }
     }
 
-    m_output.push_back(make_tuple(s, v, updated, high_resolution_clock::now(), failed_guesses, failed_coords));
+    m_output.push_back(make_tuple(s, v, updated, steady_clock::now(), failed_guesses, failed_coords));
 }
 
 bool Grid::process(const bool verbose, const set<pair<int, int>>& mark_as_black,
