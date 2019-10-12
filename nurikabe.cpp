@@ -610,8 +610,8 @@ bool Grid::analyze_complete_islands(const bool verbose) {
     set<pair<int, int>> mark_as_black;
     set<pair<int, int>> mark_as_white;
 
-    for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
-        const Region& r = **i;
+    for (const auto& sp : m_regions) {
+        const Region& r = *sp;
 
         if (r.numbered() && r.size() == r.number()) {
             mark_as_black.insert(r.unk_begin(), r.unk_end());
@@ -626,8 +626,8 @@ bool Grid::analyze_single_liberties(const bool verbose) {
     set<pair<int, int>> mark_as_black;
     set<pair<int, int>> mark_as_white;
 
-    for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
-        const Region& r = **i;
+    for (const auto& sp : m_regions) {
+        const Region& r = *sp;
 
         const bool partial =
             (r.black() && r.size() < m_total_black)
@@ -652,8 +652,8 @@ bool Grid::analyze_dual_liberties(const bool verbose) {
     set<pair<int, int>> mark_as_black;
     set<pair<int, int>> mark_as_white;
 
-    for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
-        const Region& r = **i;
+    for (const auto& sp : m_regions) {
+        const Region& r = *sp;
 
         if (r.numbered() && r.size() == r.number() - 1 && r.unk_size() == 2) {
             const int x1 = r.unk_begin()->first;
@@ -800,10 +800,10 @@ bool Grid::analyze_confinement(const bool verbose, cache_map_t& cache) {
                 set<pair<int, int>> verboten;
                 verboten.insert(make_pair(x, y));
 
-                for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
-                    const Region& r = **i;
+                for (const auto& sp : m_regions) {
+                    const Region& r = *sp;
 
-                    if (confined(*i, cache, verboten)) {
+                    if (confined(sp, cache, verboten)) {
                         if (r.black()) {
                             mark_as_black.insert(make_pair(x, y));
                         } else {
@@ -815,8 +815,8 @@ bool Grid::analyze_confinement(const bool verbose, cache_map_t& cache) {
         }
     }
 
-    for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
-        const Region& r = **i;
+    for (const auto& sp1 : m_regions) {
+        const Region& r = *sp1;
 
         if (r.numbered() && r.size() < r.number()) {
             for (auto u = r.unk_begin(); u != r.unk_end(); ++u) {
@@ -825,8 +825,8 @@ bool Grid::analyze_confinement(const bool verbose, cache_map_t& cache) {
 
                 insert_valid_unknown_neighbors(verboten, u->first, u->second);
 
-                for (auto k = m_regions.begin(); k != m_regions.end(); ++k) {
-                    if (k != i && (*k)->numbered() && confined(*k, cache, verboten)) {
+                for (const auto& sp2 : m_regions) {
+                    if (sp2 != sp1 && sp2->numbered() && confined(sp2, cache, verboten)) {
                         mark_as_black.insert(*u);
                     }
                 }
@@ -1170,8 +1170,8 @@ void Grid::mark(const State s, const int x, const int y) {
 
     cell(x, y) = s;
 
-    for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
-        (*i)->unk_erase(x, y);
+    for (const auto& sp : m_regions) {
+        sp->unk_erase(x, y);
     }
 
     // Marking a cell as white or black could create an independent region,
@@ -1234,8 +1234,8 @@ void Grid::fuse_regions(shared_ptr<Region> r1, shared_ptr<Region> r2) {
 
     // Update the secondary region's cells to point to the primary region.
 
-    for (auto i = r2->begin(); i != r2->end(); ++i) {
-        region(i->first, i->second) = r1;
+    for (const auto& [ x, y ] : *r2) {
+        region(x, y) = r1;
     }
 
     // Erase the secondary region from the set of all regions.
@@ -1306,12 +1306,12 @@ bool Grid::unreachable(const int x_root, const int y_root, set<pair<int, int>> d
 
         int size = 0;
 
-        for (auto i = white_regions.begin(); i != white_regions.end(); ++i) {
-            size += (*i)->size();
+        for (const auto& sp : white_regions) {
+            size += sp->size();
         }
 
-        for (auto i = numbered_regions.begin(); i != numbered_regions.end(); ++i) {
-            size += (*i)->size();
+        for (const auto& sp : numbered_regions) {
+            size += sp->size();
         }
 
         if (numbered_regions.size() > 1) {
@@ -1388,19 +1388,20 @@ bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
 
     // The open set contains cells that we're considering adding to the region.
     for (auto i = r->unk_begin(); i != r->unk_end(); ++i) {
-        flags[i->first + i->second * m_width] = OPEN;
+        const auto& [ x, y ] = *i;
+        flags[x + y * m_width] = OPEN;
     }
 
     // The closed set contains cells that we've hypothetically added to the region.
-    for (auto i = r->begin(); i != r->end(); ++i) {
-        flags[i->first + i->second * m_width] = CLOSED;
+    for (const auto& [ x, y ] : *r) {
+        flags[x + y * m_width] = CLOSED;
     }
 
     int closed_size = r->size();
 
     // Flag the verboten cells last, because this could overwrite open flags.
-    for (auto i = verboten.begin(); i != verboten.end(); ++i) {
-        flags[i->first + i->second * m_width] = VERBOTEN;
+    for (const auto& [ x, y ] : verboten) {
+        flags[x + y * m_width] = VERBOTEN;
     }
 
     // While we need to consume more cells...
@@ -1490,14 +1491,15 @@ bool Grid::confined(const shared_ptr<Region>& r, cache_map_t& cache,
                 cache[r].insert(p);
             }
         } else { // Consume a whole region.
-            for (auto i = area->begin(); i != area->end(); ++i) {
-                flags[i->first + i->second * m_width] = CLOSED;
+            for (const auto& [ x, y ] : *area) {
+                flags[x + y * m_width] = CLOSED;
             }
 
             closed_size += area->size();
 
             for (auto i = area->unk_begin(); i != area->unk_end(); ++i) {
-                Flag& f = flags[i->first + i->second * m_width];
+                const auto& [ x, y ] = *i;
+                Flag& f = flags[x + y * m_width];
 
                 if (f == NONE) {
                     f = OPEN;
@@ -1538,8 +1540,8 @@ bool Grid::detect_contradictions(const bool verbose, cache_map_t& cache) {
     int black_cells = 0;
     int white_cells = 0;
 
-    for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
-        const Region& r = **i;
+    for (const auto& sp : m_regions) {
+        const Region& r = *sp;
 
         // We don't need to look for gigantic black regions because
         // counting black cells is strictly more powerful.
@@ -1553,7 +1555,7 @@ bool Grid::detect_contradictions(const bool verbose, cache_map_t& cache) {
         (r.black() ? black_cells : white_cells) += r.size();
 
 
-        if (confined(*i, cache)) {
+        if (confined(sp, cache)) {
             return uh_oh("Contradiction found! Confined region detected.");
         }
     }
@@ -1579,13 +1581,13 @@ Grid::Grid(const Grid& other)
     m_output(), // Intentionally not copied to increase performance. This copy ctor is private.
     m_prng(other.m_prng) {
 
-    for (auto i = other.m_regions.begin(); i != other.m_regions.end(); ++i) {
-        m_regions.insert(make_shared<Region>(**i));
+    for (const auto& sp : other.m_regions) {
+        m_regions.insert(make_shared<Region>(*sp));
     }
 
-    for (auto i = m_regions.begin(); i != m_regions.end(); ++i) {
-        for (auto k = (*i)->begin(); k != (*i)->end(); ++k) {
-            region(k->first, k->second) = *i;
+    for (const auto& sp : m_regions) {
+        for (const auto& [ x, y ] : *sp) {
+            region(x, y) = sp;
         }
     }
 }
