@@ -890,9 +890,9 @@ vector<pair<int, int>> Grid::guessing_order() {
         });
 
 
-    vector<pair<int, int>> ret;
+    vector<pair<int, int>> ret(x_y_manhattan.size());
 
-    transform(x_y_manhattan.begin(), x_y_manhattan.end(), back_inserter(ret),
+    transform(x_y_manhattan.begin(), x_y_manhattan.end(), ret.begin(),
         [](const tuple<int, int, int>& t) { return make_pair(get<0>(t), get<1>(t)); });
 
     return ret;
