@@ -271,7 +271,7 @@ int main() {
             "          \n"
         },
 
-        { // http://nikoli.com/en/puzzles/nurikabe/
+        {
             "nikoli_1", 10, 10,
             "       5 2\n"
             "3         \n"
